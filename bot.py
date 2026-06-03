@@ -35,10 +35,10 @@ class Tracker:
         with open(self.path, "w") as f:
             json.dump(self.data, f, indent=2, ensure_ascii=False)
 
-    def register(self, user_id: int, name: str) -> bool:
+    def register(self, user_id: int, name: str, username: str = "") -> bool:
         uid = str(user_id)
         if uid not in self.data:
-            self.data[uid] = {"name": name, "online": False}
+            self.data[uid] = {"name": name, "username": username, "online": False}
             self._save()
             return True
         return False
@@ -73,7 +73,7 @@ class Tracker:
         return self.data.get(str(user_id), {}).get("online", False)
 
     def all(self):
-        return [(int(k), v["name"]) for k, v in self.data.items()]
+        return [(int(k), v["name"], v.get("username", "")) for k, v in self.data.items()]
 
 
 tracker = Tracker(DATA_FILE)
@@ -101,7 +101,8 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, напиши своё имя.")
         return
 
-    tracker.register(uid, text)
+    username = update.effective_user.username or ""
+    tracker.register(uid, text, username)
     tracker.touch(uid)
     await update.message.reply_text(
         f"Отлично, {text}! Теперь я буду оповещать других, когда ты онлайн."
@@ -118,12 +119,13 @@ async def check_online(ctx: ContextTypes.DEFAULT_TYPE):
             changed.append((uid, name, now))
 
     for uid, name, online in changed:
-        status = "есть в наличии" if online else "нет в наличии"
-        for other_uid, _ in tracker.all():
+        tag = f"@{tracker.data[str(uid)]['username']}" if tracker.data[str(uid)].get("username") else name
+        status = "есть в наличии 🟢" if online else "нет в наличии 🔴"
+        for other_uid, _, _ in tracker.all():
             if other_uid != uid:
                 try:
                     await ctx.bot.send_message(
-                        chat_id=other_uid, text=f"{name} {status}"
+                        chat_id=other_uid, text=f"{tag} {status}"
                     )
                 except Exception as e:
                     logger.warning(f"Не удалось отправить {other_uid}: {e}")
